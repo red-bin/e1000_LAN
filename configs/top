@@ -1,0 +1,27 @@
+boot system rpm0 primary flash://FTOS-EF-8.4.2.1.bin
+boot system rpm0 secondary flash://FTOS-EF-7.7.1.1.bin
+boot system rpm0 default flash://FTOS-EF-7.7.1.0.bin
+!
+redundancy auto-failover-limit count 3 period 60
+redundancy auto-synchronize full
+redundancy primary rpm0
+!
+hardware watchdog
+!
+logging coredump rps
+!
+hostname josh
+!
+cam-profile default microcode default
+!
+cam-ipv4flow multicast-fib 9 pbr 1 qos 8 system-flow 5 trace-list 1
+!
+cam-l2acl system-flow 6 l2acl 14 pvst 50 qos 12 l2pt 13 frrp 5
+!
+username root secret 5 44adf21220f7755003ef4e0f8bf60bef privilege 15
+!
+ip vrf default-vrf 0
+!
+default vlan-id 1000
+!
+default-vlan disable
