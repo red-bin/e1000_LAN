@@ -16,77 +16,77 @@ interface Vlan %s
 %s
   no shutdown"""
 
-vlan_plan = [ 
-    { 1: [ { 'card_id':1, 'id_range':(0,23) }] },
-    { 2: [ { 'card_id':1, 'id_range':(24,47) }] },
-    { 3: [ { 'card_id':1, 'id_range':(48,71) }] },
-    { 4: [ { 'card_id':1, 'id_range':(24,47) },
-                     { 'card_id':2, 'id_range':(0,5) }] },
-    { 5: [ { 'card_id':2, 'id_range':(6,29) } ] },
-    { 6: [ { 'card_id':2, 'id_range':(30,53) } ] },
-    { 7: [ { 'card_id':2, 'id_range':(54,77) } ] },
-    { 8: [ { 'card_id':2, 'id_range':(78,89) },
-           { 'card_id':3, 'id_range':(0,11) } ] },
-    { 9: [ { 'card_id':3, 'id_range':(12,35) } ] },
-    { 10: [ { 'card_id':3, 'id_range':(36,59) } ] },
-    { 11: [ { 'card_id':3, 'id_range':(60,83) } ] },
-    { 12: [ { 'card_id':3, 'id_range':(84,89) },
-                      { 'card_id':4, 'id_range':(0,17) }] },
-    ]
-
 LINECARDLOC = "/opt/lan_e1000/LAN_e1000/configs/linecards.defs"
 
-class Lan(object):
-    def __init__(self, col_count=12, col_size=24):
-        self.switch = Switch(vlan_plan)
-        self.columns = self.create_columns(col_count, col_size)
-        print super(Lan,self)
-
-    #def __setitem__(self, key, value):
-    #    print self.columns
-
+class Lan():
+    def __init__(self, column_no=12, column_size=24):
+        self.switch = Switch()
+        self.columns = self.create_columns(column_no, column_size)
+        self.vlans = self.create_vlans()
+        
     def create_columns(self, col_count, col_size):
         col_range = range(1,col_count+1)
-        ret_cols = [ Column(id, col_size) for id in col_range ]
+        ret = [ self.new_col(id, col_size, self.switch) for id in col_range ]
 
-        return ret_cols
-        
-class Column(Lan):
-    def __init__(self, id, size):
-#        self.people = create_people(size)
-        print dir(super(Column, self).__init__())
-        self.vlan = id
+        return ret
+
+    def new_col(self, id, col_size, switch):
+        return Column(id, col_size, switch)
+
+    def create_vlans(self):
+        vlans = []
+        for col in self.columns:
+            new_vlan = Vlan(col.id)
+            for vlan_if in range(0, col.size):
+                vlan_if = self.switch.open_ifs.pop(0)
+                new_vlan.add_interface(vlan_if)
+
+            vlans.append(new_vlan)
+
+        return vlans
+         
+class Column():
+    def __init__(self, id, size, switch=None):
+        self.id = id
+        self.switch = switch
+        self.size = size
+
+        #self.switchports = self.switch.create_vlans(self.size)
 
 class Switch():
-    def __init__(self, switch_config):
-        self.vlans = self.create_vlans(switch_config)
+    def __init__(self):
         self.cards = self.create_linecards(LINECARDLOC)
-
-    def create_vlans(self, switch_config):
-        new_vlans = []
-        for vlan_conf in switch_config:
-            vlan_conf = vlan_conf.items()[0]
-            vlan_id, cards = vlan_conf
-            new_vlan = Vlan(vlan_id, cards)
-            new_vlans.append(new_vlan)
-
-        return new_vlans
+        self.open_ifs = self.get_open_ifs()
 
     def create_linecards(self, conf_loc):
         conf_lines = '\n'.join(open(conf_loc,'r').readlines())
         exec(conf_lines) # linecards = { ........ }
         for cardtype in linecards:
-            name,slots,size = cardtype.values()
+            name  = cardtype['name']
+            slots  = cardtype['slots']
+            size  = cardtype['size']
             cards = [ Linecard(name,slot,size) for slot in slots ]
 
-        linecards = itertools.chain(*cards)
-
+        linecards = itertools.chain(cards)
         return linecards
 
+    def get_open_ifs(self):
+        open_ifs = []
+        for card in self.cards:
+            for card_if in card.interfaces:
+                if not card_if.vlan_id:
+                    open_ifs.append(card_if)
+
+        return open_ifs
+
 class Vlan():
-    def __init__(self, id, cards):
+    def __init__(self, id):
         self.id = id
+        self.interfaces = []
         self.lines = self.create_vlan_lines()
+
+    def add_interface(self, interface):
+        self.interfaces.append(interface)
 
     def create_vlan_lines(self):
         if_lines = self.get_if_vlanlines()
@@ -106,25 +106,25 @@ class Linecard():
         self.name = name
         self.slot = slot
         self.size = size
+        self.interfaces = self.create_interfaces()
 
-        self.interfaces = self.create_interfaces(self.size)
-
-    def create_interfaces(self, size):
+    def create_interfaces(self):
         interfaces = []
-        id_range = range(0,size)
-
-        if_list = []
-        for id in id_range:
-            interface = Interface(id)
-            interfaces.append(interface)
+        for id in range(0, self.size):
+            interfaces.append(self.new_interface(id))
 
         return interfaces
 
-class Interface():
-    def __init__(self, id):
-        self.id = id
-        self.vlan_line = "  untagged GigabitEthernet %s" % (id)
-        self.if_line = GIGETHBASE % (1, id)
+    def new_interface(self, id):
+         return Interface(id, self)
 
-lan = Lan()
-#vlans = switch.vlans
+class Interface():
+    def __init__(self, id, card):
+        self.id = id
+        self.card = card
+        self.vlan_id = None
+
+        #self.vlan_line = "  untagged GigabitEthernet %s" % (id)
+        #self.if_line = GIGETHBASE % (1, id)
+
+lan = Lan(12, 24)
